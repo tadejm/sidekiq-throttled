@@ -56,9 +56,9 @@ module Sidekiq
       # Hooks throttler into sidekiq.
       #
       # @return [void]
-      def setup!
+      def setup!(pauser: true)
         Communicator.instance.setup!
-        QueuesPauser.instance.setup!
+        QueuesPauser.instance.setup! if pauser
 
         Sidekiq.configure_server do |config|
           setup_strategy!

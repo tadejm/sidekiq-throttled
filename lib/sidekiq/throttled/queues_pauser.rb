@@ -36,11 +36,22 @@ module Sidekiq
       RESUME_MESSAGE = "resume"
       private_constant :RESUME_MESSAGE
 
+      class << self
+        def enabled?
+          instance.enabled?
+        end
+      end
+
       # Initializes singleton instance.
       def initialize
         @paused_queues = Set.new
         @communicator  = Communicator.instance
         @mutex         = Mutex.new
+        @enabled       = false
+      end
+
+      def enabled?
+        @enabled
       end
 
       # Configures Sidekiq server to keep actual list of paused queues.
@@ -48,6 +59,8 @@ module Sidekiq
       # @private
       # @return [void]
       def setup!
+        @enabled = true
+
         Patches::Queue.apply!
 
         Sidekiq.configure_server do |config|
@@ -65,6 +78,8 @@ module Sidekiq
       # @private
       # @return [Array<String>]
       def filter(queues)
+        return queues  unless @enabled
+
         @mutex.synchronize { queues - @paused_queues.to_a }
       rescue => e
         Sidekiq.logger.error { "[#{self.class}] Failed filter queues: #{e}" }
@@ -75,6 +90,8 @@ module Sidekiq
       #
       # @return [Array<String>]
       def paused_queues
+        return [] unless @enabled
+
         Sidekiq.redis { |conn| conn.smembers(PAUSED_QUEUES).to_a }
       end
 
@@ -83,6 +100,8 @@ module Sidekiq
       # @param [#to_s] queue
       # @return [void]
       def pause!(queue)
+        return unless @enabled
+
         queue = QueueName.normalize queue.to_s
 
         Sidekiq.redis do |conn|
@@ -96,6 +115,8 @@ module Sidekiq
       # @param queue [#to_s]
       # @return [Boolean]
       def paused?(queue)
+        return false unless @enabled
+
         queue = QueueName.normalize queue.to_s
         Sidekiq.redis { |conn| conn.sismember(PAUSED_QUEUES, queue) }
       end
@@ -105,6 +126,8 @@ module Sidekiq
       # @param [#to_s] queue
       # @return [void]
       def resume!(queue)
+        return unless @enabled
+
         queue = QueueName.normalize queue.to_s
 
         Sidekiq.redis do |conn|

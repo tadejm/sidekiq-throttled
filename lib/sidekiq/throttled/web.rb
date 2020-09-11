@@ -8,6 +8,7 @@ require "sidekiq"
 require "sidekiq/web"
 
 # internal
+require "sidekiq/throttled/queues_pauser"
 require "sidekiq/throttled/registry"
 require "sidekiq/throttled/web/stats"
 require "sidekiq/throttled/web/summary_fix"
@@ -23,6 +24,8 @@ module Sidekiq
       class << self
         # Replace default Queues tab with enhanced one.
         def enhance_queues_tab!
+          return unless QueuesPauser.enabled?
+
           SummaryFix.enabled = true
           Sidekiq::Web::DEFAULT_TABS["Queues"] = "enhanced-queues"
           Sidekiq::Web.tabs.delete("Enhanced Queues")
@@ -33,6 +36,8 @@ module Sidekiq
         # @api There's next to absolutely no value in this method for real
         #   users. The only it's purpose is to restore virgin state in specs.
         def restore_queues_tab!
+          return unless QueuesPauser.enabled?
+
           SummaryFix.enabled = false
           Sidekiq::Web::DEFAULT_TABS["Queues"] = "queues"
           Sidekiq::Web.tabs["Enhanced Queues"] = "enhanced-queues"
@@ -40,9 +45,12 @@ module Sidekiq
 
         # @api private
         def registered(app)
-          SummaryFix.apply! app
+          if QueuesPauser.enabled?
+            SummaryFix.apply! app
+            register_enhanced_queues_tab app
+          end
+
           register_throttled_tab app
-          register_enhanced_queues_tab app
         end
 
         private
@@ -81,6 +89,9 @@ module Sidekiq
   end
 end
 
-Sidekiq::Web.register Sidekiq::Throttled::Web
+Sidekiq::Web.register(Sidekiq::Throttled::Web)
 Sidekiq::Web.tabs["Throttled"] = "throttled"
-Sidekiq::Web.tabs["Enhanced Queues"] = "enhanced-queues"
+
+if Sidekiq::Throttled::QueuesPauser.enabled?
+  Sidekiq::Web.tabs["Enhanced Queues"] = "enhanced-queues"
+end
